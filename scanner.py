@@ -2,6 +2,7 @@ import subprocess
 import ipaddress
 import socket
 from datetime import datetime
+import concurrent.futures
 
 #using datetime to make a filename with timestamp
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -16,25 +17,23 @@ def get_local_subnet():
     return subnet
 
 #scans the whole network range that was grabbed in get_local_subnet(), while also calling other functions to perform the main heavy lifting of the program
-def scan_network(subnet):
-    count = 0
-    start_time = datetime.now()
-    print(f"==[Scanning {str(subnet)} for SMB shares and live hosts]==\n")
-    with open(filename, "w") as log:
-        for ip in subnet.hosts():
-            ip = str(ip)
-            port_status = scan_ports(ip)
-            if port_status[139] == 'Filtered' and port_status[445] == 'Filtered':
-                continue
-            count += 1
-            nbts_data = run_nbtscan(ip)
-            if port_status[139] == 'Open' or port_status[445] == 'Open':
-                share_data = run_smbclient(ip)
-            else:
-                share_data = None
-            print_output(ip, port_status, nbts_data, share_data, log)
-    elapsed = (datetime.now()-start_time).seconds
-    print(f"==[Scan completed in {elapsed}s]==\n==[Live Hosts found: {count}]==")
+def scan_ip(ip):
+    ip = str(ip)
+    port_status = scan_ports(ip)
+    if port_status[139] == 'Filtered' and port_status[445] == 'Filtered':
+        return None
+    nbts_data = run_nbtscan(ip)
+    if port_status[139] == 'Open' or port_status[445] == 'Open':
+        share_data = run_smbclient(ip)
+    else:
+        share_data = None
+    return {
+        "ip": ip,
+        "port_status": port_status,
+        "nbts_data": nbts_data,
+        "share_data": share_data
+    }
+    
 
 #called by scan_network to check status of ports 139 and 445 on individual IPs in the network. 
 def scan_ports(ip):
@@ -110,7 +109,10 @@ def print_output(ip, port_status, nbts_data, share_data, log):
 def run_nbtscan(ip):
     scan_results = {}
     command = ["nbtscan","-q",ip]
-    result = subprocess.run(command, capture_output=True, text=True)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        return None
     result = result.stdout.strip()
     if result=='':
         return None
@@ -126,7 +128,12 @@ def run_nbtscan(ip):
 def run_smbclient(ip):
     shares = []
     command = ["smbclient","-L",ip,"-N"]
-    result = subprocess.run(command, capture_output=True, text=True)
+    
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
+    except subprocess.TimeoutExpired:
+        return None
+    
     if result.returncode != 0:
         return None
     result = result.stdout.splitlines()
@@ -140,4 +147,27 @@ def run_smbclient(ip):
 
 
 subnet = get_local_subnet()
-scan_network(subnet)
+print(f"==[Scanning {str(subnet)} for SMB shares and live hosts]==\n")
+start_time = datetime.now()
+count = 0
+
+with open(filename, "w") as log:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+        try:
+            for result in executor.map(scan_ip, subnet.hosts()):
+                if result is not None:
+                    count += 1
+                    print_output(
+                        result["ip"],
+                        result["port_status"],
+                        result["nbts_data"],
+                        result["share_data"],
+                        log
+                    )
+        except KeyboardInterrupt:
+            print("\nScan interrupted by user. Cancelling pending tasks...")
+            executor.shutdown(wait=False, cancel_futures=True)
+
+
+elapsed = (datetime.now()-start_time).seconds
+print(f"==[Scan completed in {elapsed}s]==\n==[Live Hosts found: {count}]==")

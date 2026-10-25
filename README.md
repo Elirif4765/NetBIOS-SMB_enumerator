@@ -1,25 +1,27 @@
 # NetBIOS Host Discoverer & SMB Shares Enumerator
 
-A lightweight, dependency-free Python network reconnaissance tool that scans a local subnet to identify live hosts, extract NetBIOS metadata, and flag anonymously accessible SMB file shares.
+A lightweight Python network reconnaissance tool that scans a local subnet to identify hosts, extract NetBIOS metadata, and check for SMB shares that can be listed without a password.
 
 ## Overview
 
-Legacy or misconfigured network devices often expose internal file shares over TCP ports 139/445 via NULL (unauthenticated) SMB sessions, and leak hostnames/workgroups over UDP port 137 (NetBIOS Name Service). This tool automates the discovery of both issues across an entire subnet without relying on heavyweight frameworks like Nmap NSE scripts or Metasploit.
+Legacy or misconfigured network devices can expose internal file shares over TCP ports 139/445 via unauthenticated SMB sessions, and leak hostnames/workgroups over UDP port 137 (NetBIOS Name Service). This tool automates host discovery and attempts anonymous SMB share enumeration across a subnet using Python sockets together with `nbtscan` and `smbclient`, without relying on heavyweight frameworks like Nmap NSE scripts or Metasploit.
 
 ## Features
 
 - **Auto subnet detection** — parses the active `eth0` interface to determine the local CIDR block automatically
-- **Ghost Host filtering** — drops dead/firewalled IPs early (both port 139 and 445 filtered) to avoid wasting time on unresponsive hosts
-- **NetBIOS metadata extraction** — wraps `nbtscan` to pull hostname and workgroup info, even when TCP ports are closed
-- **Anonymous SMB share detection** — wraps `smbclient -N` to enumerate readable disk shares, filtering out administrative shares like `print$`
-- **Fault-tolerant logging** — streams results directly to a timestamped report file as each host completes, instead of buffering everything in memory
-- **Dual output** — concise live summary on stdout, detailed forensic report on disk
+- **Ghost Host filtering** — skips hosts when both port 139 and port 445 checks time out and are classified as `Filtered`
+- **Multithreaded scanning** — uses `ThreadPoolExecutor` with up to 50 worker threads to process host scans concurrently
+- **NetBIOS metadata extraction** — wraps `nbtscan` to pull hostname and workgroup information, even when TCP ports are closed
+- **Anonymous SMB share enumeration** — wraps `smbclient -N` to list disk shares without prompting for a password, filtering out the administrative share `print$`; listing a share does not by itself prove that files inside it are readable
+- **Subprocess timeouts** — `nbtscan` and `smbclient` calls have a five-second timeout
+- **Timestamped report** — writes processed host details to a report file named `report_<timestamp>.txt`
+- **Dual output** — prints a concise summary to the terminal and writes a more detailed report to disk; report writes are handled by the main thread
 
 ## Requirements
 
 - Python 3.x
 - Linux (tested on Kali Linux / Ubuntu)
-- `nbtscan` and `smbclient` binaries
+- `nbtscan` and `smbclient` command-line tools
 
 ```bash
 sudo apt update && sudo apt install nbtscan smbclient -y
@@ -31,11 +33,11 @@ sudo apt update && sudo apt install nbtscan smbclient -y
 python3 scanner.py
 ```
 
-The script auto-detects the local subnet from `eth0`, scans all hosts, prints live results to the terminal, and writes a full audit log to `report_<timestamp>.txt` in the working directory.
+The script attempts to detect the local subnet from `eth0`, scans the subnet's host addresses using a thread pool, prints results to the terminal, and writes a report to `report_<timestamp>.txt` in the working directory. The TCP connection timeout is 0.5 seconds per port; the `nbtscan` and `smbclient` subprocess timeout is five seconds each.
 
 ## Example Output
 
-```
+```text
 192.168.56.130 - Host:METASPLOITABLE Workgroup:METASPLOITABLE - PORT 139: Open | PORT 445: Open
      [!] WARNING: ANONYMOUS SHARES FOUND!
       -> tmp
@@ -44,26 +46,29 @@ The script auto-detects the local subnet from `eth0`, scans all hosts, prints li
 
 ## How It Works
 
-1. **Discovery** – Parse local interface config to get the CIDR range
-2. **Port Check** – TCP connect scan on 139/445 with a 0.5s timeout, classifying each as Open / Closed / Filtered
-3. **Ghost Host Drop** – Skip hosts where both ports are Filtered
-4. **Deep Enumeration** – Run `nbtscan` (NetBIOS) and, if a port is open, `smbclient -N` (anonymous share listing)
-5. **Dual Output** – Print a live summary and append a detailed record to the forensic log
+1. **Discovery** – Parse local interface configuration to get the CIDR range from `eth0`
+2. **Port Check** – Perform TCP connection checks on ports 139 and 445 with a 0.5-second timeout, classifying each as `Open`, `Closed`, or `Filtered`
+3. **Ghost Host Drop** – Skip a host if both port checks are classified as `Filtered`
+4. **Deep Enumeration** – Run `nbtscan` for NetBIOS information and, if either SMB port is open, run `smbclient -N` to attempt anonymous share listing
+5. **Threaded Execution** – Use up to 50 worker threads to scan hosts concurrently; the main thread processes results and writes report entries
+6. **Dual Output** – Print a terminal summary and write a detailed record to the timestamped report
 
 ## Tested Scenarios
 
 | Target State | Result |
 |---|---|
-| Both ports closed, no NetBIOS response | Correctly skipped as a Ghost Host |
-| Both ports open, anonymous shares present | Flagged HIGH RISK, shares listed |
-| Ports closed but NetBIOS reachable (UDP 137) | Host still identified via nbtscan |
+| Both ports are `Filtered` | Host is skipped before deeper enumeration |
+| Both ports are closed, with no NetBIOS response | Host can still appear in the output with unknown hostname/workgroup; SMB share enumeration is skipped |
+| Both ports open and anonymous share listing succeeds | Share names are listed and flagged for review |
+| Ports closed but NetBIOS reachable on UDP 137 | Host may still be identified through `nbtscan` |
 
 ## Remediation Guidance
 
-For any host flagged with anonymous shares:
-- Disable guest/anonymous SMB access (`restrict anonymous = 2`, `guest ok = no` in `smb.conf`)
+For any host where anonymous SMB share listing succeeds:
+
+- Disable guest/anonymous SMB access (for example, review `restrict anonymous` and `guest ok` settings in `smb.conf`)
 - Block ports 137/139/445 at the perimeter firewall for untrusted subnets
-- Migrate to SMBv3 with mandatory signed sessions
+- Use supported SMB versions and configure SMB signing/encryption according to the environment's security requirements; disable SMBv1 where possible
 
 ## Disclaimer
 
