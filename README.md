@@ -30,7 +30,7 @@ sudo apt update && sudo apt install nbtscan smbclient -y
 ## Usage
 
 ```bash
-python3 scanner.py
+python3 main.py
 ```
 
 The script attempts to detect the local subnet from `eth0`, scans the subnet's host addresses using a thread pool, prints results to the terminal, and writes a report to `report_<timestamp>.txt` in the working directory. The TCP connection timeout is 0.5 seconds per port; the `nbtscan` and `smbclient` subprocess timeout is five seconds each.
