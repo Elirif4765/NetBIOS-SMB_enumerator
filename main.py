@@ -9,8 +9,8 @@ def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"report_{timestamp}.txt"
     
-    subnet = get_local_subnet()
-    print(f"==[Scanning {str(subnet)} for SMB shares and live hosts]==\n")
+    interface, subnet = get_local_subnet()
+    print(f"==[Scanning {interface}: {str(subnet)} for SMB shares and live hosts]==\n")
     start_time = datetime.now()
     count = 0
 

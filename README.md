@@ -8,7 +8,7 @@ Legacy or misconfigured network devices can expose internal file shares over TCP
 
 ## Features
 
-- **Auto subnet detection** — parses the active `eth0` interface to determine the local CIDR block automatically
+- **Auto subnet detection** — uses `psutil` to determine the local CIDR block automatically
 - **Ghost Host filtering** — skips hosts when both port 139 and port 445 checks time out and are classified as `Filtered`
 - **Multithreaded scanning** — uses `ThreadPoolExecutor` with up to 50 worker threads to process host scans concurrently
 - **NetBIOS metadata extraction** — wraps `nbtscan` to pull hostname and workgroup information, even when TCP ports are closed
