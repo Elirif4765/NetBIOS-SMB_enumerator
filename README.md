@@ -4,16 +4,15 @@ A lightweight Python network reconnaissance tool that scans a local subnet to id
 
 ## Overview
 
-Legacy or misconfigured network devices can expose internal file shares over TCP ports 139/445 via unauthenticated SMB sessions, and leak hostnames/workgroups over UDP port 137 (NetBIOS Name Service). This tool automates host discovery and attempts anonymous SMB share enumeration across a subnet using Python sockets together with `nbtscan` and `smbclient`, without relying on heavyweight frameworks like Nmap NSE scripts or Metasploit.
+Legacy or misconfigured network devices can expose internal file shares over TCP ports 139/445 via unauthenticated SMB sessions, and leak hostnames/workgroups over UDP port 137 (NetBIOS Name Service). This tool automates host discovery and attempts anonymous SMB share enumeration across a subnet using Python sockets together with `nmb` and `smbconnection` from `impacket`, without relying on heavyweight frameworks like Nmap NSE scripts or Metasploit.
 
 ## Features
 
 - **Auto subnet detection** — uses `psutil` to determine the local CIDR block automatically
 - **Ghost Host filtering** — skips hosts when both port 139 and port 445 checks time out and are classified as `Filtered`
-- **Multithreaded scanning** — uses `ThreadPoolExecutor` with up to 50 worker threads to process host scans concurrently
-- **NetBIOS metadata extraction** — wraps `nbtscan` to pull hostname and workgroup information, even when TCP ports are closed
-- **Anonymous SMB share enumeration** — wraps `smbclient -N` to list disk shares without prompting for a password, filtering out the administrative share `print$`; listing a share does not by itself prove that files inside it are readable
-- **Subprocess timeouts** — `nbtscan` and `smbclient` calls have a five-second timeout
+- **Multithreaded scanning** — uses `ThreadPoolExecutor` with up to 50 worker threads (which can be customized)to process host scans concurrently
+- **NetBIOS metadata extraction** — uses `nmb` from `impacket` to pull hostname and workgroup information of a target IP
+- **Anonymous SMB share enumeration** — uses `smbconnection` from `impacket` to list disk shares with anonymous access (null username and password), while filtering out the administrative shares like `print$`; listing a share does not by itself prove that files inside it are readable (strong contendor for future scope honestly)
 - **Timestamped report** — writes processed host details to a report file named `report_<timestamp>.txt`
 - **Dual output** — prints a concise summary to the terminal and writes a more detailed report to disk; report writes are handled by the main thread
 
@@ -21,10 +20,10 @@ Legacy or misconfigured network devices can expose internal file shares over TCP
 
 - Python 3.x
 - Linux (tested on Kali Linux / Ubuntu)
-- `nbtscan` and `smbclient` command-line tools
+- `impacket` library
 
 ```bash
-sudo apt update && sudo apt install nbtscan smbclient -y
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -33,7 +32,7 @@ sudo apt update && sudo apt install nbtscan smbclient -y
 python3 main.py
 ```
 
-The script attempts to detect the local subnet from `eth0`, scans the subnet's host addresses using a thread pool, prints results to the terminal, and writes a report to `report_<timestamp>.txt` in the working directory. The TCP connection timeout is 0.5 seconds per port; the `nbtscan` and `smbclient` subprocess timeout is five seconds each.
+The script attempts to detect the local subnet from `eth0`, scans the subnet's host addresses using a thread pool, prints results to the terminal, and writes a report to `report_<timestamp>.txt` in the working directory. The TCP connection timeout is 0.5 seconds per port; the `nmb` and `smbconnection` timeout is 2 seconds each.
 
 ## Example Output
 
@@ -49,8 +48,8 @@ The script attempts to detect the local subnet from `eth0`, scans the subnet's h
 1. **Discovery** – Parse local interface configuration to get the CIDR range from `eth0`
 2. **Port Check** – Perform TCP connection checks on ports 139 and 445 with a 0.5-second timeout, classifying each as `Open`, `Closed`, or `Filtered`
 3. **Ghost Host Drop** – Skip a host if both port checks are classified as `Filtered`
-4. **Deep Enumeration** – Run `nbtscan` for NetBIOS information and, if either SMB port is open, run `smbclient -N` to attempt anonymous share listing
-5. **Threaded Execution** – Use up to 50 worker threads to scan hosts concurrently; the main thread processes results and writes report entries
+4. **Deep Enumeration** – Use `.getnodestatus()` from `impacket.nmb` for NetBIOS information and, if either SMB port is open, use `.listShares()` from `impacket.smbconnection` to attempt anonymous share listing
+5. **Threaded Execution** – Use up to 50 worker threads to scan hosts concurrently; the main thread processes results and writes report entries; any number of threads can be used as per needs.
 6. **Dual Output** – Print a terminal summary and write a detailed record to the timestamped report
 
 ## Tested Scenarios
@@ -60,7 +59,7 @@ The script attempts to detect the local subnet from `eth0`, scans the subnet's h
 | Both ports are `Filtered` | Host is skipped before deeper enumeration |
 | Both ports are closed, with no NetBIOS response | Host can still appear in the output with unknown hostname/workgroup; SMB share enumeration is skipped |
 | Both ports open and anonymous share listing succeeds | Share names are listed and flagged for review |
-| Ports closed but NetBIOS reachable on UDP 137 | Host may still be identified through `nbtscan` |
+| Ports closed but NetBIOS reachable on UDP 137 | Host may still be identified through `impacket.nmb` |
 
 ## Remediation Guidance
 

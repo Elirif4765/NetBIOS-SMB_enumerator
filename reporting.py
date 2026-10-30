@@ -60,7 +60,7 @@ def write_report(result, log):
     else:
         print("[!] VULNERABILITY ALERT: Anonymous Share Enumeration Successful!", file=log)
         print("    Risk Level: HIGH", file=log)
-        print("    The following custom file shares are readable without password verification:", file=log)
+        print("    The following custom file shares are enumerable without password verification:", file=log)
         for share in share_data:
             print(f"     -> {share}", file=log)
     print("\n\n", file=log)

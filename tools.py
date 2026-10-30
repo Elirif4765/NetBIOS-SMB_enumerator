@@ -1,13 +1,13 @@
-import subprocess
-from impacket import nmb
+from impacket import nmb, smbconnection
 
 
-def run_nbtscan(ip):
+def run_nmb(ip):
     nb = nmb.NetBIOS()
-    scan_results = {'hostnames': set(), 'workgroups': set()}
+    hostnames = set()
+    workgroups = set()
 
     try:
-        entries = nb.getnodestatus(nbname="*", destaddr=ip, timeout=1)
+        entries = nb.getnodestatus(nbname="*", destaddr=ip, timeout=2)
         if not entries:
             return None
         for entry in entries:
@@ -20,38 +20,51 @@ def run_nbtscan(ip):
 
             if name_type == 0x00:
                 if is_group and name:
-                    scan_results['workgroups'].add(name)
+                    workgroups.add(name)
                 else:
-                    scan_results['hostnames'].add(name)
+                    hostnames.add(name)
 
-        scan_results['hostnames'] = list(scan_results['hostnames'])
-        scan_results['workgroups'] = list(scan_results['workgroups'])
+        if not hostnames and not workgroups:
+            return None
 
-        if scan_results['hostnames'] or scan_results['workgroups']:
-            return scan_results
+        return {
+            'hostnames': list(hostnames),
+            'workgroups': list(workgroups)
+        }
 
-        return None
-    
     except Exception:
         return None
         
 
-def run_smbclient(ip):
+
+def run_smb(ip):
     shares = []
-    command = ["smbclient","-L",ip,"-N"]
-    
+    ports = [445, 139]
+    conn = None
+
+    for port in ports:
+        remote_name = ip if port == 445 else "*SMBSERVER"
+        try:
+            conn = smbconnection.SMBConnection(remoteName=remote_name, remoteHost=ip, sess_port=port, timeout=2)
+            break
+        except:
+            continue
+
+    if conn is None:
+        return None
+
     try:
-        result = subprocess.run(command, capture_output=True, text=True, timeout=5)
-    except subprocess.TimeoutExpired:
-        return None
-    
-    if result.returncode != 0:
-        return None
-    result = result.stdout.splitlines()
-    for line in result:
-        if 'Disk' in line:
-            indie_words = line.strip().split()
-            share_name = indie_words[0]
-            if share_name != 'print$':
+        conn.login(user="", password="")
+        all_shares = conn.listShares()
+
+        for share in all_shares:
+            share_name = share['shi1_netname'].rstrip('\x00')
+            share_type = share['shi1_type']
+
+            if (share_type & 0xF) == 0 and share_name != "print$":
                 shares.append(share_name)
-    return shares
+
+        return shares
+
+    except Exception:
+        return None
