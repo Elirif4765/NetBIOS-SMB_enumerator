@@ -2,12 +2,12 @@
 
 def nbts_names(nbts_data):
     if nbts_data is None:
-        hostname = 'Unknown'
-        workgroup = 'Unknown'
+        hostnames = ['Unknown']
+        workgroups = ['Unknown']
     else:
-        hostname = nbts_data["hostname"]
-        workgroup = nbts_data["workgroup"]
-    return hostname, workgroup
+        hostnames = nbts_data["hostnames"]
+        workgroups = nbts_data["workgroups"]
+    return hostnames, workgroups
 
 def print_output(result):
     ip = result["ip"]
@@ -15,9 +15,9 @@ def print_output(result):
     port_status_445 = result["port_status"][445]
     nbts_data = result["nbts_data"]
     share_data = result["share_data"]
-    hostname, workgroup = nbts_names(nbts_data)
+    hostnames, workgroups = nbts_names(nbts_data)
     
-    print(f"{ip} - Host:{hostname} Workgroup:{workgroup} - PORT 139: {port_status_139} | PORT 445: {port_status_445}")
+    print(f"{ip} - Host Names: {', '.join(hostnames)} | Workgroup Names: {', '.join(workgroups)} - PORT 139: {port_status_139} | PORT 445: {port_status_445}")
 
     if share_data is None:
         if port_status_445=='Open' or port_status_139=='Open':
@@ -36,13 +36,13 @@ def write_report(result, log):
     port_status_445 = result["port_status"][445]
     nbts_data = result["nbts_data"]
     share_data = result["share_data"]
-    hostname, workgroup = nbts_names(nbts_data)
+    hostnames, workgroups = nbts_names(nbts_data)
     
     print("=" * 60, file=log)
     print(f"SECURITY AUDIT REPORT FOR TARGET: {ip}", file=log)
     print("=" * 60, file=log)
-    print(f"[*] NetBIOS Hostname : {hostname}", file=log)
-    print(f"[*] NetBIOS Workgroup: {workgroup}", file=log)
+    print(f"[*] NetBIOS Hostnames : {', '.join(hostnames)}", file=log)
+    print(f"[*] NetBIOS Workgroups: {', '.join(workgroups)}", file=log)
     print(f"[*] Port 139 Status  : {port_status_139}", file=log)
     print(f"[*] Port 445 Status  : {port_status_445}", file=log)
     print("-" * 60, file=log)
