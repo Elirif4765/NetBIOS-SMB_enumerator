@@ -1,4 +1,5 @@
-
+import models
+from database import SessionLocal
 
 def nbts_names(nbts_data):
     if nbts_data is None:
@@ -30,37 +31,31 @@ def print_output(result):
             print(f"      -> {share}")
     print()
 
-def write_report(result, log):
+def create_host(result):
     ip = result["ip"]
     port_status_139 = result["port_status"][139]
     port_status_445 = result["port_status"][445]
     nbts_data = result["nbts_data"]
     share_data = result["share_data"]
     hostnames, workgroups = nbts_names(nbts_data)
-    
-    print("=" * 60, file=log)
-    print(f"SECURITY AUDIT REPORT FOR TARGET: {ip}", file=log)
-    print("=" * 60, file=log)
-    print(f"[*] NetBIOS Hostnames : {', '.join(hostnames)}", file=log)
-    print(f"[*] NetBIOS Workgroups: {', '.join(workgroups)}", file=log)
-    print(f"[*] Port 139 Status  : {port_status_139}", file=log)
-    print(f"[*] Port 445 Status  : {port_status_445}", file=log)
-    print("-" * 60, file=log)
+    status = None
 
     if share_data is None:
         if port_status_445 == 'Open' or port_status_139 == 'Open':
-            print("[+] SMB Security Assessment:", file=log)
-            print("    Status: SECURE (Requires Authentication)", file=log)
-            print("    Notice: Target rejected anonymous share listing requests.", file=log)
-
+            status = "SECURE"
+        else:
+            status = "CLOSED"
     elif len(share_data) == 0:
-        print("[-] SMB Security Assessment:", file=log)
-        print("    Status: POTENTIAL RISK (Anonymous Session Allowed)", file=log)
-        print("    Notice: Connected successfully, but no custom disk shares were found.", file=log)
+        status = "POTENTIAL RISK"
     else:
-        print("[!] VULNERABILITY ALERT: Anonymous Share Enumeration Successful!", file=log)
-        print("    Risk Level: HIGH", file=log)
-        print("    The following custom file shares are enumerable without password verification:", file=log)
-        for share in share_data:
-            print(f"     -> {share}", file=log)
-    print("\n\n", file=log)
+        status = "VULNERABLE"
+    
+    new_host = models.Hosts(ip=ip, port_139=port_status_139, port_445=port_status_445, hostnames=hostnames, workgroups=workgroups, shares=share_data, risk_status=status)
+    
+    return new_host
+
+def write_db(scan_results, timestamp, interface, subnet, elapsed, count):
+    with SessionLocal() as db:
+        new_scan = models.Scans(scan_batch=timestamp, interface=interface, subnet=str(subnet), elapsed_seconds=elapsed, hosts_found=count, hosts=scan_results)
+        db.add(new_scan)
+        db.commit()
