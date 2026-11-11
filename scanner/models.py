@@ -1,13 +1,16 @@
-from database import Base
-from sqlalchemy import ForeignKey, JSON
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy import ForeignKey, JSON, DateTime
+from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
+from datetime import datetime
 
+class Base(DeclarativeBase):
+    pass
 
 class Scans(Base):
     __tablename__ = "scans"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    scan_batch: Mapped[str]
+    # scan_batch: Mapped[str]
+    scan_batch: Mapped[datetime] = mapped_column(DateTime)
     interface: Mapped[str]
     subnet: Mapped[str]
     elapsed_seconds: Mapped[int]
