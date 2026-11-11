@@ -1,3 +1,6 @@
 .venv
 __pycache__
 report.db
+dist/
+build/
+*.spec

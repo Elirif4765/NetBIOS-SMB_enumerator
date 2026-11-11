@@ -1,5 +1,5 @@
-import models
-from database import SessionLocal
+import scanner.models as models
+from scanner.database import SessionLocal
 
 def nbts_names(nbts_data):
     if nbts_data is None:
@@ -10,26 +10,26 @@ def nbts_names(nbts_data):
         workgroups = nbts_data["workgroups"]
     return hostnames, workgroups
 
-def print_output(result):
-    ip = result["ip"]
-    port_status_139 = result["port_status"][139]
-    port_status_445 = result["port_status"][445]
-    nbts_data = result["nbts_data"]
-    share_data = result["share_data"]
-    hostnames, workgroups = nbts_names(nbts_data)
-    
-    print(f"{ip} - Host Names: {', '.join(hostnames)} | Workgroup Names: {', '.join(workgroups)} - PORT 139: {port_status_139} | PORT 445: {port_status_445}")
+def format_host_report(result):
+    hostnames = ", ".join(result.hostnames)
+    workgroups = ", ".join(result.workgroups)
 
-    if share_data is None:
-        if port_status_445=='Open' or port_status_139=='Open':
-            print("     [+] SMB Security: Requires Authentication (Access Denied)")
-    elif len(share_data) == 0:
-        print("     [-] No anonymous custom shares found")
+    lines = [
+        f"{result.ip} - Host Names: {hostnames} | Workgroup Names: {workgroups} - "
+        f"PORT 139: {result.port_139} | PORT 445: {result.port_445}"
+    ]
+
+    if result.shares is None:
+        if result.port_445 == 'Open' or result.port_139 == 'Open':
+            lines.append("     [+] SMB Security: Requires Authentication (Access Denied)")
+    elif len(result.shares) == 0:
+        lines.append("     [-] No anonymous custom shares found")
     else:
-        print("     [!] WARNING: ANONYMOUS SHARES FOUND!")
-        for share in share_data:
-            print(f"      -> {share}")
-    print()
+        lines.append("     [!] WARNING: ANONYMOUS SHARES FOUND!")
+        for share in result.shares:
+            lines.append(f"      -> {share}")
+
+    return "\n".join(lines) + "\n"
 
 def create_host(result):
     ip = result["ip"]
